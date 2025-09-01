@@ -1,6 +1,8 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import get_stocks as stocks
+import pandas as pd
 
 def calculate_ema(data, period):
     alpha = 2 / (period + 1)
@@ -22,6 +24,14 @@ def calculate_macd(data, short_period, long_period, signal_period):
 
 def calculate_sma(data, period):
     return np.convolve(data, np.ones(period) / period, mode='valid')
+
+def calculate_smma(prices, period):
+    prices = pd.Series(prices)
+    smma = prices.rolling(window=period).mean()  # primo valore è la SMA iniziale
+    for i in range(period, len(prices)):
+        smma_i = (smma.iloc[i - 1] * (period - 1) + prices.iloc[i]) / period
+        smma.iloc[i] = smma_i
+    return smma
 
 def calculate_rsi(data, period):
     deltas = np.diff(data)
@@ -47,18 +57,19 @@ def backtest_strategy(data,
                       rsi_period, rsi_oversold, rsi_overbought):
 
     sma = calculate_sma(data, sma_period)
-    ema = calculate_ema(data, ema_period)
-    rsi = calculate_rsi(data, rsi_period)
+    # ema = calculate_ema(data, ema_period)
+    # rsi = calculate_rsi(data, rsi_period)
 
-    macd_line, signal_line = calculate_macd(data, macd_short, macd_long, macd_signal)
+    # macd_line, signal_line = calculate_macd(data, macd_short, macd_long, macd_signal)
 
-    min_len = min(len(sma), len(ema), len(signal_line), len(rsi))
+    # min_len = min(len(sma), len(ema), len(signal_line), len(rsi))
+    min_len = len(sma)
 
     sma = sma[-min_len:]
-    ema = ema[-min_len:]
-    rsi = rsi[-min_len:]
-    macd_line = macd_line[-min_len:]
-    signal_line = signal_line[-min_len:]
+    # ema = ema[-min_len:]
+    # rsi = rsi[-min_len:]
+    # macd_line = macd_line[-min_len:]
+    # signal_line = signal_line[-min_len:]
     price_aligned = data[-min_len:]
 
     position = 0
@@ -69,17 +80,23 @@ def backtest_strategy(data,
         price = price_aligned[i]
 
         if position == 0:
-            if (price > sma[i] and price > ema[i] and
-                macd_line[i] > signal_line[i] and
-                macd_line[i-1] <= signal_line[i-1] and
-                rsi[i] < rsi_oversold):
+            # if (price > sma[i] and price > ema[i] and
+            #     macd_line[i] > signal_line[i] and
+            #     macd_line[i-1] <= signal_line[i-1] and
+            #     rsi[i] < rsi_oversold):
+            #     position = 1
+            #     entry_price = price
+            if (price > sma[i]):
                 position = 1
                 entry_price = price
-
+            
         elif position == 1:
-            if (price < sma[i] or price < ema[i] or
-                (macd_line[i] < signal_line[i] and macd_line[i-1] >= signal_line[i-1]) or
-                rsi[i] > rsi_overbought):
+            # if (price < sma[i] or price < ema[i] or
+            #     (macd_line[i] < signal_line[i] and macd_line[i-1] >= signal_line[i-1]) or
+            #     rsi[i] > rsi_overbought):
+            #     cash += price - entry_price
+            #     position = 0
+            if (price < sma[i]):
                 cash += price - entry_price
                 position = 0
 
@@ -91,32 +108,57 @@ def backtest_strategy(data,
 def optimize_params(data):
     best_profit = -np.inf
     best_params = None
-
+    count=0
     for sma_p in range(5, 31, 5):
-        for ema_p in range(5, 31, 5):
-            for macd_s in range(8, 16, 2):
-                for macd_l in range(20, 31, 2):
-                    if macd_l <= macd_s:
-                        continue
-                    for macd_sig in range(5, 11):
-                        for rsi_p in range(10, 21, 5):
-                            for rsi_os in range(20, 41, 5):
-                                for rsi_ob in range(60, 81, 5):
-                                    profit = backtest_strategy(data,
-                                                              sma_p, ema_p,
-                                                              macd_s, macd_l, macd_sig,
-                                                              rsi_p, rsi_os, rsi_ob)
-                                    if profit > best_profit:
-                                        best_profit = profit
-                                        best_params = (sma_p, ema_p, macd_s, macd_l, macd_sig, rsi_p, rsi_os, rsi_ob)
+        print("smma period: ",sma_p)
+        # for ema_p in range(5, 31, 5):
+        #     for macd_s in range(8, 16, 2):
+        #         for macd_l in range(20, 31, 2):
+        #             if macd_l <= macd_s:
+        #                 continue
+        #             for macd_sig in range(5, 11):
+        #                 for rsi_p in range(10, 21, 5):
+        #                     for rsi_os in range(20, 41, 5):
+        #                         for rsi_ob in range(60, 81, 5):
+                                    # count += 1
+                                    # print(
+                                    #     round(
+                                    #         100*count/6
+                                    #         ), 
+                                    #     "%",end='\r'
+                                    # )
+                                    # profit = backtest_strategy(data,
+                                    #                           sma_p, ema_p,
+                                    #                           macd_s, macd_l, macd_sig,
+                                    #                           rsi_p, rsi_os, rsi_ob)
+        profit = backtest_strategy(data,
+                                    sma_p, 0,
+                                    0, 0, 0,
+                                    0, 0, 0)
+        print("profit:", profit)
+        if profit > best_profit:
+            best_profit = profit
+            # best_params = (sma_p, ema_p, macd_s, macd_l, macd_sig, rsi_p, rsi_os, rsi_ob)
+            best_params = (sma_p, 0, 0, 0, 0, 0, 0, 0)
 
     return best_params, best_profit
 
-
+# print(stocks.get_values())
+prices = stocks.get_values()
+print(prices)
+# exit()
+# base_stock = 100
+# max_stock = 200
+# step = 5
+# prices = [float(i) for i in range(base_stock, max_stock, step)]
+# print(prices)
+# prices = [100,105,110]
+# prices = [100.0, 105.0, 110.0, 115.0, 120.0, 125.0, 130.0, 135.0, 140.0, 145.0, 150.0, 155.0, 160.0, 165.0, 170.0, 175.0, 180.0, 185.0, 190.0, 195.0]
+# exit()
 # Dati sintetici per test
-np.random.seed(42)
-days = 500
-prices = np.cumsum(np.random.normal(0, 1, days)) + 100
+# np.random.seed(42)
+# days = 500
+# prices = np.cumsum(np.random.normal(0, 1, days)) + 100
 
 best_params, best_profit = optimize_params(prices)
 print("Migliori parametri (SMA, EMA, MACD_short, MACD_long, MACD_signal, RSI_period, RSI_oversold, RSI_overbought):")
@@ -127,3 +169,4 @@ print("Profitto simulato:", best_profit)
 plt.plot(prices)
 plt.title("Prezzi simulati con ottimizzazione parametri")
 plt.show()
+
