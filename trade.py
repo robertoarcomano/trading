@@ -179,7 +179,7 @@ class Trade:
 
         return best_period, best_profit, best_cost
 
-    def cross_ema_stragegy(self, candlesticks, ema_low, ema_high, period):
+    def cross_ema_stragegy(self, candlesticks, ema_low, ema_high, period, debug=False):
         position = 0
         cash = 0
         entry_price = 0
@@ -198,7 +198,8 @@ class Trade:
                 type_trade = "equal"
             if position == 0:
                 if type_trade == "green" and ema_low[i] > ema_high[i] and i > period:
-                    print(i,type_trade,"BUY:",candlestick, ema_low[i], ema_high[i], cash, cost)
+                    if debug:
+                        print(i,type_trade,"BUY:",candlestick, ema_low[i], ema_high[i], cash, cost)
                     position = 1
                     entry_price = close
                     cost += close * Trade.BINANCE_OP_COST / 100
@@ -206,7 +207,8 @@ class Trade:
                 
             elif position == 1:
                 if type_trade == "red" and ema_low[i] < ema_high[i] and i > period:
-                    print(i, type_trade,"SELL:",candlestick, ema_low[i], ema_high[i], cash, cost)
+                    if debug:
+                        print(i, type_trade,"SELL:",candlestick, ema_low[i], ema_high[i], cash, cost)
                     cash += close - entry_price
                     position = 0
                     cost += close * Trade.BINANCE_OP_COST / 100
@@ -216,8 +218,8 @@ class Trade:
             cash += candlesticks[-1][1] - entry_price
             cost += close * Trade.BINANCE_OP_COST / 100
             ops += 1
-
-        return round(cash), round(ops), round(cost)
+        precision = 4
+        return round(cash,precision), ops, round(cost/ops,precision) if ops>0 else 0, round(cost,precision), round(cash - cost,precision)
 
     def net_profit(self, best_profit, avg, days, best_ops):
         return f"{round(best_profit*100/avg/days-best_ops/days*Trade.BINANCE_OP_COST,1)}"    
@@ -250,28 +252,53 @@ class Trade:
 
     def simulate(self):
         days = 30
-        header = "N;Symbol;EMA_PERIOD;EMA_PROFIT;EMA_OPS;EMA_COST;EMA_NET"
+        header = "Symbol;PERIOD;PROFIT;OPS;SINGLE_COST;COST;NET_PROFIT;NET_PROFIT_PERCENTAGE"
         print(header)
         count=1
         sma_best_period = 0
+        symbol_array = []
         for symbol in self.get_symbols():
-            if symbol != "BTCEUR":
-               continue
+            # if symbol != "BTCEUR":
+            #    continue
             try:
                 candlesticks = self.get_candlesticks(symbol, days, "4h")
                 closes = self.get_close_array_from_candlesticks(candlesticks)
                 if not closes:
                     continue
-                close_avg = np.mean(closes)
-                ema_low = self.calculate_ema(candlesticks, 9)
-                ema_high = self.calculate_ema(candlesticks, 26)
-                ema_profit, ema_ops, ema_cost = self.cross_ema_stragegy(candlesticks, ema_low, ema_high, 26)
-                # self.plot_candlesticks(candlesticks, ema_low, ema_high)
-                print(f"{count};{symbol};EMA_9_26;{ema_profit};{ema_ops};{ema_cost};{ema_profit}-{ema_cost}={ema_profit-ema_cost}")
+                avg = np.mean(closes)
+                best_net_profit = 0
+                best_low_period = 0
+                best_high_period = 0
+                for high_period in range(10, round(days*6)):
+                    for low_period in range(1, round(days*6)):
+                        if low_period >= high_period:
+                            continue    
+                        ema_low = self.calculate_ema(candlesticks, low_period)
+                        ema_high = self.calculate_ema(candlesticks, high_period)
+                        profit, ops, single_cost, cost, net_profit = self.cross_ema_stragegy(candlesticks, ema_low, ema_high, max(low_period, high_period), debug=False)
+                        if net_profit > best_net_profit:
+                            best_net_profit = net_profit
+                            best_ops = ops
+                            best_single_cost = single_cost
+                            best_cost = cost
+                            best_profit = profit 
+                            best_low_period = low_period
+                            best_high_period = high_period                           
+                        # self.plot_candlesticks(candlesticks, ema_low, ema_high)
+                        # print(f"{count};{symbol};EMA_{low_period}_{high_period};{profit};{ops};{single_cost};{cost};{net_profit}")
+                if best_low_period == 0 or best_high_period == 0:
+                    continue   
+                # print(f"{count};{symbol};EMA_{best_low_period}_{best_high_period};{best_profit};{best_ops};{best_single_cost};{best_cost};{best_net_profit};{round(100*best_net_profit/avg,1)}%")
+                symbol_array.append([symbol, "EMA" + "_" + str(best_low_period) + "_" + str(best_high_period), best_profit, best_ops, best_single_cost, best_cost, best_net_profit, float(round(100*best_net_profit/avg,1))])     
             except Exception as e:
                 print(e)
                 continue
             count+=1
+            # if count > 5:
+                # break
+        symbol_array.sort(key=lambda x: x[7], reverse=True)
+        for symbol in symbol_array:
+            print(f"{symbol[0]};{symbol[1]};{symbol[2]};{symbol[3]};{symbol[4]};{symbol[5]};{symbol[6]};{symbol[7]}%")
 
 if __name__ == "__main__":
     trade = Trade()
