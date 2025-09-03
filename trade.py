@@ -4,6 +4,8 @@ import pandas as pd
 import requests
 import datetime
 from binance.client import Client
+import mplfinance as mpf
+import yfinance as yf
 
 
 class Trade:
@@ -79,6 +81,7 @@ class Trade:
             ema_value = (price * k) + (ema[-1] * (1 - k))
             ema.append(ema_value)
         
+        ema = [0]*(period-1) + ema
         return ema
 
     # def calculate_macd(data, short_period, long_period, signal_period):
@@ -176,10 +179,7 @@ class Trade:
 
         return best_period, best_profit, best_cost
 
-    def cross_ema_stragegy(self, candlesticks):
-        ema_low = [0]*9 + self.calculate_ema(candlesticks, 9)
-        ema_high = [0]*26 + self.calculate_ema(candlesticks, 26)
-
+    def cross_ema_stragegy(self, candlesticks, ema_low, ema_high, period):
         position = 0
         cash = 0
         entry_price = 0
@@ -197,7 +197,7 @@ class Trade:
             else:
                 type_trade = "equal"
             if position == 0:
-                if type_trade == "green" and ema_low[i] > ema_high[i] and i > 26:
+                if type_trade == "green" and ema_low[i] > ema_high[i] and i > period:
                     print(i,type_trade,"BUY:",candlestick, ema_low[i], ema_high[i], cash, cost)
                     position = 1
                     entry_price = close
@@ -205,7 +205,7 @@ class Trade:
                     ops += 1
                 
             elif position == 1:
-                if type_trade == "red" and ema_low[i] < ema_high[i] and i > 26:
+                if type_trade == "red" and ema_low[i] < ema_high[i] and i > period:
                     print(i, type_trade,"SELL:",candlestick, ema_low[i], ema_high[i], cash, cost)
                     cash += close - entry_price
                     position = 0
@@ -231,6 +231,23 @@ class Trade:
     def get_average_array_from_candlesticks(candlesticks): 
         return [np.mean(candlestick) for candlestick in candlesticks]
 
+    def plot_candlesticks(self, candlesticks, ema1, ema2):
+        df = pd.DataFrame(candlesticks, columns=['Open', 'Close'])
+        df['High'] = df[['Open', 'Close']].max(axis=1)
+        df['Low'] = df[['Open', 'Close']].min(axis=1)
+        df.index = pd.date_range(start='2025-08-03', periods=len(df), freq='4h')
+        df = df[['Open', 'High', 'Low', 'Close']]
+
+        # Calcolo EMA su df stesso
+        ema1 = df['Close'].ewm(span=9, adjust=False).mean()
+        ema2 = df['Close'].ewm(span=26, adjust=False).mean()
+
+        ap1 = mpf.make_addplot(ema1, panel=0, color='blue')
+        ap2 = mpf.make_addplot(ema2, panel=0, color='green')
+
+        mpf.plot(df, type='candle', style='charles', addplot=[ap1, ap2], title='BTCEUR Candlestick', volume=False)
+
+
     def simulate(self):
         days = 30
         header = "N;Symbol;EMA_PERIOD;EMA_PROFIT;EMA_OPS;EMA_COST;EMA_NET"
@@ -246,10 +263,11 @@ class Trade:
                 if not closes:
                     continue
                 close_avg = np.mean(closes)
-                # sma_best_period, sma_best_profit, sma_best_cost = self.optimize_params(candlesticks,"sma")
-                # smma_best_period, smma_best_profit, smma_best_ops = self.optimize_params(candlesticks,"smma")
-                ema_profit, ema_ops, ema_cost = self.cross_ema_stragegy(candlesticks)
-                print(f"{count};{symbol};EMA_9_26;{ema_profit};{ema_ops};{ema_cost};{ema_profit-ema_cost}")
+                ema_low = self.calculate_ema(candlesticks, 9)
+                ema_high = self.calculate_ema(candlesticks, 26)
+                ema_profit, ema_ops, ema_cost = self.cross_ema_stragegy(candlesticks, ema_low, ema_high, 26)
+                # self.plot_candlesticks(candlesticks, ema_low, ema_high)
+                print(f"{count};{symbol};EMA_9_26;{ema_profit};{ema_ops};{ema_cost};{ema_profit}-{ema_cost}={ema_profit-ema_cost}")
             except Exception as e:
                 print(e)
                 continue
