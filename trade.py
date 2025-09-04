@@ -13,8 +13,8 @@ class Trade:
     # And a 25% discount if use BNB to pay the fee
     # BINANCE_OP_COST = 0.075
     BINANCE_OP_COST = 0.1
-    def __init__(self):
-        pass
+    def __init__(self, debug=False):
+        self.debug = debug
 
     def get_symbols(self):
         url = "https://api.binance.com/api/v3/exchangeInfo"
@@ -33,7 +33,8 @@ class Trade:
         end_time = start_time + datetime.timedelta(days=days)
         s = start_time.strftime("%d %b, %Y %H:%M:%S")
         e = end_time.strftime("%d %b, %Y %H:%M:%S")
-        print(s,e)
+        if self.debug:
+            print("Candlesticks interval: ",s,"-",e)
         # Recupera i dati delle candele (klines)
         klines = client.get_historical_klines(
             symbol,
@@ -180,7 +181,7 @@ class Trade:
 
         return best_period, best_profit, best_cost
 
-    def cross_ema_stragegy(self, candlesticks, low, high, debug=False):
+    def cross_ema_stragegy(self, candlesticks, low, high):
         ema_low = self.calculate_ema(candlesticks, low)
         ema_high = self.calculate_ema(candlesticks, high)    
         period = max(low, high)
@@ -201,7 +202,7 @@ class Trade:
                 type_trade = "equal"
             if position == 0:
                 if type_trade == "green" and ema_low[i] > ema_high[i] and i > period:
-                    if debug:
+                    if self.debug:
                         print(i,type_trade,"BUY:",candlestick, ema_low[i], ema_high[i], cash, cost)
                     position = 1
                     entry_price = close
@@ -210,7 +211,7 @@ class Trade:
                 
             elif position == 1:
                 if type_trade == "red" and ema_low[i] < ema_high[i] and i > period:
-                    if debug:
+                    if self.debug:
                         print(i, type_trade,"SELL:",candlestick, ema_low[i], ema_high[i], cash, cost)
                     cash += close - entry_price
                     position = 0
@@ -223,7 +224,8 @@ class Trade:
             ops += 1
         precision = 4
         avg = self.get_average_from_candlesticks(candlesticks)
-        print("cash:", round(cash,precision), "cost:", round(cost,precision), "net profit:", round(cash - cost,precision), "net profit percentage:", round((cash - cost)*100/avg,precision))
+        if self.debug:
+            print("cash:", round(cash,precision), "cost:", round(cost,precision), "net profit:", round(cash - cost,precision), "net profit percentage:", round((cash - cost)*100/avg,precision))
         return round(cash,precision), ops, round(cost/ops,precision) if ops>0 else 0, round(cost,precision), round(cash - cost,precision), round((cash - cost)*100/avg,precision)     
 
     def net_profit(self, best_profit, avg, days, best_ops):
@@ -258,9 +260,9 @@ class Trade:
 
         mpf.plot(df, type='candle', style='charles', addplot=[ap1, ap2], title='BTCEUR Candlestick', volume=False)
 
-    def backtest_cross_ema_strategy(self, symbol, start_time=(datetime.datetime.now()- datetime.timedelta(days=30)).strftime("%m-%Y"), days=30, interval="4h", low=9, high=26, debug=False):
+    def backtest_cross_ema_strategy(self, symbol, start_time=(datetime.datetime.now()- datetime.timedelta(days=30)).strftime("%m-%Y"), days=30, interval="4h", low=9, high=26):
         candlesticks = self.get_candlesticks(symbol, start_time, days, interval)
-        profit, ops, single_cost, cost, net_profit, net_profit_percentage = self.cross_ema_stragegy(candlesticks, low, high, debug)
+        profit, ops, single_cost, cost, net_profit, net_profit_percentage = self.cross_ema_stragegy(candlesticks, low, high)
         return net_profit_percentage
 
     def simulate(self):
@@ -326,6 +328,11 @@ class Trade:
             print(f"{symbol[0]};{symbol[1]};{symbol[2]};{symbol[3]};{symbol[4]};{symbol[5]};{symbol[6]};{symbol[7]};{symbol[8]}%")
 
 if __name__ == "__main__":
-    trade = Trade()
-    net_profit_percentage = trade.backtest_cross_ema_strategy("BTCEUR", "02-2024", 30, debug=True)
-    print(net_profit_percentage)
+    trade = Trade(debug=False)
+    net_profit_percentage_array = []
+    for month in range(1,13):
+        month_string = str(month).zfill(2)
+        net_profit_percentage_array.append(float(trade.backtest_cross_ema_strategy("BTCEUR", month_string + "-2024", 30)))
+    print(net_profit_percentage_array)
+    avg, std = round(np.mean(net_profit_percentage_array),2), round(np.std(net_profit_percentage_array),2)
+    print("net_profit:",avg,"% ±",std,"%")
